@@ -293,3 +293,45 @@ type f5AddPartitionPathPayload struct {
 	// Name is the partition path to be added.
 	Name string `json:"name"`
 }
+
+// Method:POST URL:/mgmt/tm/net/tunnels/vxlan
+type f5CreateVxLANProfilePayload struct {
+	Name         string `json:"name"`         // <vxlan-profile-name> e.g. vxlan-ose
+	Partition    string `json:"partition"`    // /Common
+	FloodingType string `json:"floodingType"` // multipoint
+	Port         int    `json:"port"`         // 4789 (nothing else will work)
+}
+
+// Method:POST URL:/mgmt/tm/net/tunnels/tunnel
+type f5CreateVxLANTunnelPayload struct {
+	Name         string `json:"name"`         // vxlan5000
+	Partition    string `json:"partition"`    // /Common
+	Key          uint32 `json:key"`           // 0
+	LocalAddress string `json:“localAddress"` // 172.30.1.5
+	Mode         string `json:"mode"`         // bidirectional
+	Mtu          string `json:mtu"`           // 0
+	Profile      string `json:"profile"`      // <partition>/<vxlan-profile-name>
+	Tos          string `json:"tos"`          // preserve
+	Transparent  string `json:"transparent"`  // disabled
+	UsePmtu      string `json:"usePmtu"`      // enabled
+}
+
+// tmsh create net self <local-overlay-address>/<prefix> vlan vxlan5000
+// Method: POST URL: /mgmt/tm/net/self
+type f5CreateNetSelfPayload struct {
+	Name                  string `json:"name"`                  // “10.0.1.10/16",
+	Partition             string `json:"partition"`             // "Common",
+	Address               string `json:"address"`               // “10.0.1.10/16",
+	AddressSource         string `json:"addressSource"`         // "from-user",
+	Floating              string `json:"floating"`              // "disabled",
+	InheritedTrafficGroup string `json:"inheritedTrafficGroup"` // "false",
+	TrafficGroup          string `json:"trafficGroup"`          // "/Common/traffic-group-local-only",
+	Unit                  uint32 `json:"unit"`                  // 0,
+	Vlan                  string `json:"vlan"`                  // "/Common/vxlan5000",
+}
+
+// POST /mgmt/tm/net/fdb/tunnel/~Common~vxlan5000/records
+type f5AddFDBRecordPayload struct {
+	Name     string `json:"name"`     // "02:50:56:c0:00:06",
+	Endpoint string `json:"endpoint"` // "10.139.1.1"
+}

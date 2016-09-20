@@ -104,6 +104,13 @@ type f5LTMCfg struct {
 	// are normally used to create an access control boundary for
 	// F5 users and applications.
 	partitionPath string
+
+	// vxlanGateway is the ip address assigned to the local tunnel interface
+	// inside F5 box. This address is the one that the packets generated from F5
+	// will carry. The pods will return the packets to this address itself.
+	// It is important that the gateway be one of the ip addresses of the subnet
+	// that has been generated for F5.
+	vxlanGateway string
 }
 
 const (
@@ -460,6 +467,45 @@ func (f5 *f5LTM) delete(url string, result interface{}) error {
 //
 // Routines for controlling F5.
 //
+
+// ensureVxLANTunnel sets up the VxLAN tunnel profile and tunnel+selfIP
+func (f5 *f5LTM) ensureVxLANTunnel() error {
+	glog.V(4).Infof("Checking and installing VxLAN setup")
+
+	// create the profile
+	url := fmt.Sprintf("https://%s/mgmt/tm/net/tunnels/vxlan", f5.host)
+	profilePayload := f5CreateVxLANProfilePayload{
+		Name:         "vxlan-ose",
+		Partition:    f5.partitionPath,
+		FloodingType: "multipoint",
+		Port:         4789,
+	}
+	err = f5.post(url, profilePayload, nil)
+	if err != nil {
+		return err
+	}
+
+	// create the tunnel
+	url = fmt.Sprintf("https://%s/mgmt/tm/net/tunnels/tunnel", ft.host)
+	tunnelPayload := f5CreateVxLANTunnelPayload{
+		Name:         "vxlan5000",
+		Partition:    f5.partitionPath,
+		Key:          0,
+		LocalAddress: f5.vxLANGateway,
+		Mode:         "bidirectional",
+		Mtu:          1450,
+		Profile:      path.Join(f5.partitionPath, "vxlan5000"),
+		Tos:          "preserve",
+		Transparent:  "disabled",
+		UsePmtu:      "enabled",
+	}
+	err = ft.post(url, tunnelPayload, nil)
+	if err != nil {
+		return err
+	}
+
+	// start the watch loop for nodes
+}
 
 // ensurePolicyExists checks whether the specified policy exists and creates it
 // if not.
@@ -826,6 +872,10 @@ func (f5 *f5LTM) Initialize() error {
 		if err != nil {
 			return err
 		}
+	}
+
+	if f5.SetupOSDNVxLAN {
+		err = f5.ensureVxLANTunnel()
 	}
 
 	glog.V(4).Infof("F5 initialization is complete.")
