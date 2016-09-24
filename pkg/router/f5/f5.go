@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -111,6 +112,10 @@ type f5LTMCfg struct {
 	// It is important that the gateway be one of the ip addresses of the subnet
 	// that has been generated for F5.
 	vxlanGateway string
+
+	// setupOSDNVxLAN is the boolean that conveys if F5 needs to setup a VxLAN
+	// to hook up with openshift-sdn
+	setupOSDNVxLAN bool
 }
 
 const (
@@ -480,31 +485,26 @@ func (f5 *f5LTM) ensureVxLANTunnel() error {
 		FloodingType: "multipoint",
 		Port:         4789,
 	}
-	err = f5.post(url, profilePayload, nil)
+	err := f5.post(url, profilePayload, nil)
 	if err != nil {
 		return err
 	}
 
 	// create the tunnel
-	url = fmt.Sprintf("https://%s/mgmt/tm/net/tunnels/tunnel", ft.host)
+	url = fmt.Sprintf("https://%s/mgmt/tm/net/tunnels/tunnel", f5.host)
 	tunnelPayload := f5CreateVxLANTunnelPayload{
 		Name:         "vxlan5000",
 		Partition:    f5.partitionPath,
 		Key:          0,
-		LocalAddress: f5.vxLANGateway,
+		LocalAddress: f5.vxlanGateway,
 		Mode:         "bidirectional",
-		Mtu:          1450,
+		Mtu:          "1450",
 		Profile:      path.Join(f5.partitionPath, "vxlan5000"),
 		Tos:          "preserve",
 		Transparent:  "disabled",
 		UsePmtu:      "enabled",
 	}
-	err = ft.post(url, tunnelPayload, nil)
-	if err != nil {
-		return err
-	}
-
-	// start the watch loop for nodes
+	return f5.post(url, tunnelPayload, nil)
 }
 
 // ensurePolicyExists checks whether the specified policy exists and creates it
@@ -874,7 +874,7 @@ func (f5 *f5LTM) Initialize() error {
 		}
 	}
 
-	if f5.SetupOSDNVxLAN {
+	if f5.setupOSDNVxLAN {
 		err = f5.ensureVxLANTunnel()
 	}
 
@@ -886,22 +886,25 @@ func (f5 *f5LTM) Initialize() error {
 func checkIPAndGetMac(ipStr string) (string, error) {
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
-		errStr := Sprintf("'%s' is not a valid IP address for a vtep", ipStr)
+		errStr := fmt.Sprintf("'%s' is not a valid IP address for a vtep", ipStr)
 		glog.Warning(errStr)
-		return "", fmt.Error(errStr)
+		return "", fmt.Errorf(errStr)
 	}
 	ip4 := ip.To4()
 	if ip4 == nil {
-		errStr := Sprintf("'%s' is not a valid IPv4 address for a vtep", ipStr)
+		errStr := fmt.Sprintf("'%s' is not a valid IPv4 address for a vtep", ipStr)
 		glog.Warning(errStr)
-		return "", fmt.Error(errStr)
+		return "", fmt.Errorf(errStr)
 	}
-	macAddr := Sprintf("%02x:%02x:%02x:%02x", ip4[0], ip4[1], ip4[2], ip4[3])
+	macAddr := fmt.Sprintf("%02x:%02x:%02x:%02x", ip4[0], ip4[1], ip4[2], ip4[3])
 	return macAddr, nil
 }
 
 // AddVtep adds the Vtep IP to the VxLAN device's FDB
-func (f5 *f5LTM) AddVtep(string ipStr) error {
+func (f5 *f5LTM) AddVtep(ipStr string) error {
+	if !f5.setupOSDNVxLAN {
+		return nil
+	}
 	macAddr, err := checkIPAndGetMac(ipStr)
 	if err != nil {
 		return err
@@ -912,16 +915,19 @@ func (f5 *f5LTM) AddVtep(string ipStr) error {
 		return err
 	}
 
-	url := Sprintf("https://%s/mgmt/tm/net/fdb/tunnel/%s~vxlan5000/records", ft.host, strings.Replace(f5.partitionPath, "/", "~", -1))
+	url := fmt.Sprintf("https://%s/mgmt/tm/net/fdb/tunnel/%s~vxlan5000/records", f5.host, strings.Replace(f5.partitionPath, "/", "~", -1))
 	payload := f5AddFDBRecordPayload{
-			Name:  macAddr,
-			Endpoint: ipStr,
+		Name:     macAddr,
+		Endpoint: ipStr,
 	}
 	return f5.post(url, payload, nil)
 }
 
 // RemoveVtep removes the Vtep IP from the VxLAN device's FDB
-func (f5 *f5LTM) RemoveVtep(string ip) error {
+func (f5 *f5LTM) RemoveVtep(ipStr string) error {
+	if !f5.setupOSDNVxLAN {
+		return nil
+	}
 	macAddr, err := checkIPAndGetMac(ipStr)
 	if err != nil {
 		return err
@@ -932,7 +938,7 @@ func (f5 *f5LTM) RemoveVtep(string ip) error {
 		return err
 	}
 
-	url := Sprintf("https://%s/mgmt/tm/net/fdb/tunnel/%s~vxlan5000/records/%s", ft.host, strings.Replace(f5.partitionPath, "/", "~", -1), macAddr)
+	url := fmt.Sprintf("https://%s/mgmt/tm/net/fdb/tunnel/%s~vxlan5000/records/%s", f5.host, strings.Replace(f5.partitionPath, "/", "~", -1), macAddr)
 	return f5.delete(url, nil)
 }
 

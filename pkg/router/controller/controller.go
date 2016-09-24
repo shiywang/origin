@@ -28,6 +28,7 @@ type RouterController struct {
 
 	Plugin        router.Plugin
 	NextRoute     func() (watch.EventType, *routeapi.Route, error)
+	NextNode      func() (watch.EventType, *kapi.Node, error)
 	NextEndpoints func() (watch.EventType, *kapi.Endpoints, error)
 
 	RoutesListConsumed    func() bool

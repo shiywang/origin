@@ -179,7 +179,7 @@ func (p *TemplatePlugin) HandleEndpoints(eventType watch.EventType, endpoints *k
 // HandleNode processes watch events on the Node resource
 // The template type of plugin currently does not need to act on such events
 // so the implementation just returns without error
-func HandleNode(eventType watch.EventType, node *kapi.Node) error {
+func (p *TemplatePlugin) HandleNode(eventType watch.EventType, node *kapi.Node) error {
 	return nil
 }
 

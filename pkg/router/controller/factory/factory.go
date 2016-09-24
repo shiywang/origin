@@ -67,11 +67,11 @@ func (factory *RouterControllerFactory) Create(plugin router.Plugin) *controller
 		// we do not scope endpoints by labels or fields because the route labels != endpoints labels
 	}, &kapi.Endpoints{}, endpointsEventQueue, factory.ResyncInterval).Run()
 
-	nodeEventQueue = oscache.NewEventQueue(cache.MetaNamespaceKeyFunc)
+	nodeEventQueue := oscache.NewEventQueue(cache.MetaNamespaceKeyFunc)
 	cache.NewReflector(&nodeLW{
-		client:    factory.NClient,
-		field:     factory.Fields,
-                label:     factory.Labels,
+		client: factory.NClient,
+		field:  factory.Fields,
+		label:  factory.Labels,
 	}, &kapi.Node{}, nodeEventQueue, factory.ResyncInterval).Run()
 
 	return &controller.RouterController{
@@ -278,9 +278,9 @@ func (lw *endpointsLW) Watch(options kapi.ListOptions) (watch.Interface, error) 
 
 // nodeLW is a list watcher for routes.
 type nodeLW struct {
-	client    kclient.NodesInterface
-	label     labels.Selector
-	field     fields.Selector
+	client kclient.NodesInterface
+	label  labels.Selector
+	field  fields.Selector
 }
 
 func (lw *nodeLW) List(options kapi.ListOptions) (runtime.Object, error) {

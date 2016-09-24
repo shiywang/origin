@@ -501,7 +501,7 @@ func (p *F5Plugin) HandleNode(eventType watch.EventType, node *kapi.Node) error 
 			return nil
 		}
 		p.F5Client.RemoveVtep(ip)
-	case watch.Modified: 
+	case watch.Modified:
 		// ignore the modified event. Change in IP address of the node is not supported.
 	}
 	return nil
