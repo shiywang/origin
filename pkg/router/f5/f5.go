@@ -883,6 +883,59 @@ func (f5 *f5LTM) Initialize() error {
 	return nil
 }
 
+func checkIPAndGetMac(ipStr string) (string, error) {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		errStr := Sprintf("'%s' is not a valid IP address for a vtep", ipStr)
+		glog.Warning(errStr)
+		return "", fmt.Error(errStr)
+	}
+	ip4 := ip.To4()
+	if ip4 == nil {
+		errStr := Sprintf("'%s' is not a valid IPv4 address for a vtep", ipStr)
+		glog.Warning(errStr)
+		return "", fmt.Error(errStr)
+	}
+	macAddr := Sprintf("%02x:%02x:%02x:%02x", ip4[0], ip4[1], ip4[2], ip4[3])
+	return macAddr, nil
+}
+
+// AddVtep adds the Vtep IP to the VxLAN device's FDB
+func (f5 *f5LTM) AddVtep(string ipStr) error {
+	macAddr, err := checkIPAndGetMac(ipStr)
+	if err != nil {
+		return err
+	}
+
+	err = f5.ensurePartitionPathExists(f5.partitionPath)
+	if err != nil {
+		return err
+	}
+
+	url := Sprintf("https://%s/mgmt/tm/net/fdb/tunnel/%s~vxlan5000/records", ft.host, strings.Replace(f5.partitionPath, "/", "~", -1))
+	payload := f5AddFDBRecordPayload{
+			Name:  macAddr,
+			Endpoint: ipStr,
+	}
+	return f5.post(url, payload, nil)
+}
+
+// RemoveVtep removes the Vtep IP from the VxLAN device's FDB
+func (f5 *f5LTM) RemoveVtep(string ip) error {
+	macAddr, err := checkIPAndGetMac(ipStr)
+	if err != nil {
+		return err
+	}
+
+	err = f5.ensurePartitionPathExists(f5.partitionPath)
+	if err != nil {
+		return err
+	}
+
+	url := Sprintf("https://%s/mgmt/tm/net/fdb/tunnel/%s~vxlan5000/records/%s", ft.host, strings.Replace(f5.partitionPath, "/", "~", -1), macAddr)
+	return f5.delete(url, nil)
+}
+
 // CreatePool creates a pool named poolname on F5 BIG-IP.
 func (f5 *f5LTM) CreatePool(poolname string) error {
 	url := fmt.Sprintf("https://%s/mgmt/tm/ltm/pool", f5.host)

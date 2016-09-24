@@ -27,6 +27,7 @@ import (
 type RouterControllerFactory struct {
 	KClient        kclient.EndpointsNamespacer
 	OSClient       osclient.RoutesNamespacer
+	NClient        kclient.NodesInterface
 	Namespaces     controller.NamespaceLister
 	ResyncInterval time.Duration
 	Namespace      string
@@ -35,10 +36,11 @@ type RouterControllerFactory struct {
 }
 
 // NewDefaultRouterControllerFactory initializes a default router controller factory.
-func NewDefaultRouterControllerFactory(oc osclient.RoutesNamespacer, kc kclient.EndpointsNamespacer) *RouterControllerFactory {
+func NewDefaultRouterControllerFactory(oc osclient.RoutesNamespacer, kc kclient.Interface) *RouterControllerFactory {
 	return &RouterControllerFactory{
 		KClient:        kc,
 		OSClient:       oc,
+		NClient:        kc,
 		ResyncInterval: 10 * time.Minute,
 
 		Namespace: kapi.NamespaceAll,
@@ -65,6 +67,13 @@ func (factory *RouterControllerFactory) Create(plugin router.Plugin) *controller
 		// we do not scope endpoints by labels or fields because the route labels != endpoints labels
 	}, &kapi.Endpoints{}, endpointsEventQueue, factory.ResyncInterval).Run()
 
+	nodeEventQueue = oscache.NewEventQueue(cache.MetaNamespaceKeyFunc)
+	cache.NewReflector(&nodeLW{
+		client:    factory.NClient,
+		field:     factory.Fields,
+                label:     factory.Labels,
+	}, &kapi.Node{}, nodeEventQueue, factory.ResyncInterval).Run()
+
 	return &controller.RouterController{
 		Plugin: plugin,
 		NextEndpoints: func() (watch.EventType, *kapi.Endpoints, error) {
@@ -81,11 +90,21 @@ func (factory *RouterControllerFactory) Create(plugin router.Plugin) *controller
 			}
 			return eventType, obj.(*routeapi.Route), nil
 		},
+		NextNode: func() (watch.EventType, *kapi.Node, error) {
+			eventType, obj, err := nodeEventQueue.Pop()
+			if err != nil {
+				return watch.Error, nil, err
+			}
+			return eventType, obj.(*kapi.Node), nil
+		},
 		EndpointsListConsumed: func() bool {
 			return endpointsEventQueue.ListConsumed()
 		},
 		RoutesListConsumed: func() bool {
 			return routeEventQueue.ListConsumed()
+		},
+		NodesListConsumed: func() bool {
+			return nodeEventQueue.ListConsumed()
 		},
 		Namespaces: factory.Namespaces,
 		// check namespaces a bit more often than we resync events, so that we aren't always waiting
@@ -255,4 +274,24 @@ func (lw *endpointsLW) Watch(options kapi.ListOptions) (watch.Interface, error) 
 		ResourceVersion: options.ResourceVersion,
 	}
 	return lw.client.Endpoints(lw.namespace).Watch(opts)
+}
+
+// nodeLW is a list watcher for routes.
+type nodeLW struct {
+	client    kclient.NodesInterface
+	label     labels.Selector
+	field     fields.Selector
+}
+
+func (lw *nodeLW) List(options kapi.ListOptions) (runtime.Object, error) {
+	return lw.client.Nodes().List(options)
+}
+
+func (lw *nodeLW) Watch(options kapi.ListOptions) (watch.Interface, error) {
+	opts := kapi.ListOptions{
+		LabelSelector:   lw.label,
+		FieldSelector:   lw.field,
+		ResourceVersion: options.ResourceVersion,
+	}
+	return lw.client.Nodes().Watch(opts)
 }

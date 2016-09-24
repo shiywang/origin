@@ -9,6 +9,7 @@ import (
 	"k8s.io/kubernetes/pkg/watch"
 
 	routeapi "github.com/openshift/origin/pkg/route/api"
+	"github.com/openshift/origin/pkg/util/netutils"
 )
 
 // F5Plugin holds state for the f5 plugin.
@@ -466,8 +467,44 @@ func (p *F5Plugin) deleteRoute(routename string) error {
 	return nil
 }
 
+func getNodeIP(node *kapi.Node) (string, error) {
+	if len(node.Status.Addresses) > 0 && node.Status.Addresses[0].Address != "" {
+		return node.Status.Addresses[0].Address, nil
+	} else {
+		return netutils.GetNodeIP(node.Name)
+	}
+}
+
 func (p *F5Plugin) HandleNamespaces(namespaces sets.String) error {
 	return fmt.Errorf("namespace limiting for F5 is not implemented")
+}
+
+func (p *F5Plugin) HandleNode(eventType watch.EventType, node *kapi.Node) error {
+	// The F5 appliance, if hooked to use the VxLAN encapsulation
+	// should have its FDB updated depending on nodes arriving and leaving the cluster
+	switch eventType {
+	case watch.Added:
+		// New VTEP created, add the record to the vxlan fdb
+		ip, err := getNodeIP(node)
+		if err != nil {
+			// just log the error
+			glog.Warningf("Error in obtaining IP address of newly added node %s - %v", node.Name, err)
+			return nil
+		}
+		p.F5Client.AddVtep(ip)
+	case watch.Deleted:
+		// VTEP deleted, delete the record from vxlan fdb
+		ip, err := getNodeIP(node)
+		if err != nil {
+			// just log the error
+			glog.Warningf("Error in obtaining IP address of deleted node %s - %v", node.Name, err)
+			return nil
+		}
+		p.F5Client.RemoveVtep(ip)
+	case watch.Modified: 
+		// ignore the modified event. Change in IP address of the node is not supported.
+	}
+	return nil
 }
 
 // HandleRoute processes watch events on the Route resource and

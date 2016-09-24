@@ -17,6 +17,9 @@ type fakeRouterPlugin struct {
 func (p *fakeRouterPlugin) HandleRoute(t watch.EventType, route *routeapi.Route) error {
 	return nil
 }
+func (p *fakeRouterPlugin) HandleNode(t watch.EventType, node *kapi.Node) error {
+	return nil
+}
 func (p *fakeRouterPlugin) HandleEndpoints(watch.EventType, *kapi.Endpoints) error {
 	return nil
 }

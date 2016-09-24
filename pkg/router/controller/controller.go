@@ -32,8 +32,10 @@ type RouterController struct {
 
 	RoutesListConsumed    func() bool
 	EndpointsListConsumed func() bool
+	NodesListConsumed     func() bool
 	routesListConsumed    bool
 	endpointsListConsumed bool
+	nodesListConsumed     bool
 	filteredByNamespace   bool
 
 	Namespaces            NamespaceLister
@@ -76,6 +78,30 @@ func (c *RouterController) HandleNamespaces() {
 		time.Sleep(c.NamespaceWaitInterval)
 	}
 	glog.V(4).Infof("Unable to update list of namespaces")
+}
+
+// HandleNode handles a single Node event and synchronizes the router backend
+func (c *RouterController) HandleNode() {
+	eventType, node, err := c.NextNode()
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("unable to read nodes: %v", err))
+		return
+	}
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	// Change the local sync state within the lock to ensure that all
+	// event handlers have the same view of sync state.
+	c.nodesListConsumed = c.NodesListConsumed()
+	c.updateLastSyncProcessed()
+
+	glog.V(4).Infof("Processing Node : %s", node.Name)
+	glog.V(4).Infof("           Event: %s", eventType)
+
+	if err := c.Plugin.HandleNode(eventType, node); err != nil {
+		utilruntime.HandleError(err)
+	}
 }
 
 // HandleRoute handles a single Route event and synchronizes the router backend.
@@ -127,7 +153,7 @@ func (c *RouterController) HandleEndpoints() {
 // updateLastSyncProcessed notifies the plugin if the most recent sync
 // of router resources has been completed.
 func (c *RouterController) updateLastSyncProcessed() {
-	lastSyncProcessed := c.endpointsListConsumed && c.routesListConsumed &&
+	lastSyncProcessed := c.endpointsListConsumed && c.routesListConsumed && c.nodesListConsumed &&
 		(c.Namespaces == nil || c.filteredByNamespace)
 	if err := c.Plugin.SetLastSyncProcessed(lastSyncProcessed); err != nil {
 		utilruntime.HandleError(err)
