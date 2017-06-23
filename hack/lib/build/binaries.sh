@@ -219,6 +219,17 @@ os::build::internal::build_binaries() {
         local_ldflags+=" -s"
       fi
 
+      #Add Windows File Properties/Version Info and Icon Resource for oc.exe
+      if [[ $platform == "linux/amd64" ]]; then
+        os::build::version::get_vars
+        go get -u github.com/josephspurrier/goversioninfo
+        local major="${OS_GIT_MAJOR}"
+        local minor=`echo ${OS_GIT_MINOR} |grep -o "[0-9]*"`
+        #overide with lastest version
+        ${OS_TARGET_BIN}/goversioninfo ${OS_ROOT}/pkg/version/versioninfo.json -ver-major="${major}" -ver-minor="${minor}"
+        mv resource.syso ${OS_ROOT}/cmd/oc
+      fi
+
       if [[ ${#nonstatics[@]} -gt 0 ]]; then
         GOOS=${platform%/*} GOARCH=${platform##*/} go install \
           -pkgdir "${OS_OUTPUT_PKGDIR}/${platform}" \
